@@ -1,0 +1,59 @@
+language: java
+jdk:
+  - openjdk11
+
+branches:
+  only:
+    - master
+
+# CI 실행 완료시 메일로 알람
+notifications:
+  email:
+    recipients:
+      - kartrider_12@naver.com
+
+# Travis CI 서버의 Home
+cache:
+  directories:
+    - '$HOME/.m2/repository'
+    - '$HOME/.gradle'
+
+script: "./gradlew clean build"
+
+before_install: chmod +x gradlew
+
+# 아래부터는 codeDeploy Agent 관련 설정 (IAM 권한)
+before_deploy:
+  - mkdir -p before_deploy
+  - cp appspec.yml before_deploy/
+  - cp scripts/*.sh before_deploy/
+  - cp build/libs/*.jar before_deploy/
+  - cd before_deploy && zip -r before_deploy *
+  - cd ../ && mkdir -p deploy
+  - mv before_deploy/*.zip deploy/$PROJECT_NAME.zip # Project명
+
+deploy:
+  # TRAVIS CI -> S3
+  - provider: s3
+    access_key_id: $AWS_ACCESS_KEY # Travis repo settings에 설정된 값 (IAM CSS파일)
+    secret_access_key: $AWS_SECRET_KEY # Travis repo settings에 설정된 값 (IAM CSS파일)
+    bucket: $S3_BUCKET_NAME # S3 버킷명
+    region: ap-northeast-2
+    skip_cleanup: true
+    acl: private
+    local_dir: deploy
+    wait-until-deployed: true
+
+
+  # S3 -> codeDeploy(EC2)
+  - provider: codedeploy
+    access_key_id: $AWS_ACCESS_KEY
+    secret_access_key: $AWS_SECRET_KEY
+    bucket: $S3_BUCKET_NAME
+    key: $PROJECT_NAME.zip
+    bundle_type: zip
+    application: $CODE_DEPLOY_NAME
+    deployment_group: $CODE_DEPLOY_GROUP_NAME
+    region: ap-northeast-2
+    wait-until-deployed: true
+
